@@ -11,22 +11,56 @@ stages:
   - integration
   - prod
 
-job:
-  stage: build
-  script:
-    - echo "I'm a job"
-
-zap_baseline:
-    runs-on: ubuntu-20.04
-    needs: test
+cat >.circleci/config.yml<<EOF
+jobs:
+  build:
+    docker:
+      - image: python:3.6                   # similar to "image" in GitLab
     steps:
-      - run: |
-           docker pull softwaresecurityproject/zap-stable:2.13.0
-           docker run --user root --rm -v $(pwd):/zap/wrk:rw -w /zap softwaresecurityproject/zap-stable:2.13.0 zap-baseline.py -t ${{ secrets.PROD_URL }} -J zap-output.json
-        continue-on-error: true
+      - checkout
+      - run: |                              # similar to "script" in GitLab
+          pip install -r requirements.txt
+          python manage.py check
 
-      - uses: actions/upload-artifact@v2
-        with:
-          name: ZAP Scan
-          path: zap-output.json
-        if: always()        # what is this for?
+  test:
+    docker:
+      - image: python:3.6
+    steps:
+      - checkout
+      - run: |
+          pip install -r requirements.txt
+          python manage.py test taskManager
+
+  integration:
+    docker:
+      - image: python:3.6
+    steps:
+      - checkout
+      - run:
+          command: |
+            echo "This is an integration step"
+            exit 1
+
+  prod:
+    docker:
+      - image: python:3.6
+    steps:
+      - checkout
+      - run: echo "This is a deploy step."
+
+workflows:
+  version: 2
+  django:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build 
+      - integration:
+          requires:
+            - test
+      - prod:
+          type: approval
+          requires:
+            - integration
+EOF
